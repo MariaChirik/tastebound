@@ -16,3 +16,4 @@
 | lint | flake8 |
 | test (auth / catalog / order) | PyTest |
 | secrets-scan | gitleaks |
+- Назви гілок для задач: feature/назва-задачі.
