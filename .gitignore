@@ -1,0 +1,12 @@
+.env
+*.pem
+*.key
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/

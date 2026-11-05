@@ -1,0 +1,7 @@
+{
+  "editor.rulers": [100],
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "flake8.args": ["--config=.flake8"]
+}
