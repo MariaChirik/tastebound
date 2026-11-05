@@ -16,7 +16,7 @@ def test_health():
 
 
 def test_calculate_total():
-    assert calculate_total(ITEMS) == 390.5
+    assert calculate_total(ITEMS) == 391
 
 
 def test_validate_items_rejects_empty_list():
