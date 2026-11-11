@@ -39,7 +39,6 @@ services:
       timeout: 3s
       retries: 5
 
-  # тестова пошта: http://localhost:8025
   mailpit:
     image: axllent/mailpit:latest
     restart: unless-stopped
@@ -92,7 +91,6 @@ services:
     environment:
       AUTH_SECRET_KEY: *secret
       REDIS_URL: *redis-url
-      # без ключів працює локальний тестовий режим
       LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY:-}
       LIQPAY_PRIVATE_KEY: ${LIQPAY_PRIVATE_KEY:-}
       LIQPAY_RESULT_URL: ${LIQPAY_RESULT_URL:-http://localhost:8080/#orders}

@@ -27,7 +27,6 @@ export const USER_STATUS_LABELS = {
   blocked: "Заблокований",
 };
 
-// центр Києва
 export const DEFAULT_POINT = { lat: 50.4501, lng: 30.5234 };
 
 const STATUS_LABELS = {
@@ -100,7 +99,6 @@ export function setQuantity(cart, id, quantity) {
   return cart.map((line) => (line.id === id ? { ...line, quantity: Math.min(quantity, 20) } : line));
 }
 
-// у копійках, щоб не було похибок округлення
 export function cartTotal(cart) {
   const cents = cart.reduce((sum, line) => sum + Math.round(line.price * 100) * line.quantity, 0);
   return cents / 100;

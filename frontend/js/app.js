@@ -78,7 +78,6 @@ function persist() {
   }
 }
 
-// дані вставляються як текст, не як HTML
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -1082,7 +1081,7 @@ async function refreshAlerts() {
   try {
     latestAlerts = (await api.notifications(state.email)).items;
   } catch {
-    return; // збій сповіщень не заважає роботі застосунку
+    return;
   }
   const badge = document.getElementById("alerts-count");
   const unseen = currentView === "alerts" ? 0 : unseenCount(latestAlerts, state.seenAt);

@@ -72,7 +72,7 @@ def test_estimated_position_moves_along_the_route():
     client.post("/orders/1/status", json=ROUTE, headers=CLIENT)
     start = client.get("/orders/1/location", headers=CLIENT).get_json()["courier"]
     assert start == {"lat": 50.0, "lng": 30.0, "source": "estimate"}
-    clock.now += 300  # половина дороги
+    clock.now += 300
     middle = client.get("/orders/1/location", headers=CLIENT).get_json()["courier"]
     assert middle == {"lat": 50.05, "lng": 30.1, "source": "estimate"}
     clock.now += 3000
@@ -88,7 +88,7 @@ def test_fresh_gps_from_courier_is_preferred():
     client.post("/orders/1/location", json={"lat": 50.02, "lng": 30.03}, headers=COURIER)
     gps = client.get("/orders/1/location", headers=CLIENT).get_json()["courier"]
     assert gps == {"lat": 50.02, "lng": 30.03, "source": "gps"}
-    clock.now += 60  # телефон давно не оновлювався
+    clock.now += 60
     assert client.get("/orders/1/location",
                       headers=CLIENT).get_json()["courier"]["source"] == "estimate"
 

@@ -33,7 +33,7 @@ def deliver(store, item, clock=time.time, mailer=None):
         try:
             mailer.send(user, message)
             email_sent = True
-        except Exception as err:  # збій пошти не повинен губити сповіщення в застосунку
+        except Exception as err:
             log.warning("email to %s failed: %s", user, err)
     entry = {"message": message, "at": clock()}
     store.lpush(history_key(user), json.dumps(entry, ensure_ascii=False))
@@ -66,7 +66,6 @@ def create_app(store=None, clock=time.time, auth=None, mailer=None):
         store.rpush(QUEUE, f"{user}|{message}")
         return jsonify(queued=True, user=user), 202
 
-    # зазвичай чергу обробляє app.worker
     @app.post("/notifications/process")
     @auth.require("admin")
     def process():

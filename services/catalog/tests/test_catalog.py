@@ -1,6 +1,9 @@
+from itsdangerous import URLSafeTimedSerializer
+
 from app import create_app
 from app.data import SAMPLE_DISHES
 from app.filters import filter_dishes, parse_list
+from app.security import TokenAuth
 
 
 def names(dishes):
@@ -53,10 +56,6 @@ def test_dishes_endpoint_applies_filters():
     assert dishes
     assert all("gluten" not in d["allergens"] and "eggs" not in d["allergens"] for d in dishes)
 
-
-from itsdangerous import URLSafeTimedSerializer  # noqa: E402
-
-from app.security import TokenAuth  # noqa: E402
 
 SECRET = "test-secret"
 
