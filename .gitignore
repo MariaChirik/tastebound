@@ -10,3 +10,11 @@ venv/
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+terraform.tfvars
+.terraform.lock.hcl.bak
+kubeconfig

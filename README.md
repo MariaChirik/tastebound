@@ -10,8 +10,8 @@ services/
   notification/
   recommendation/
 frontend/
-deploy/        # docker-compose.yml, API Gateway (Nginx)
-infra/
+deploy/        # docker-compose.yml, шлюз Nginx, маніфести Kubernetes (k8s/)
+infra/         # Terraform: сервер для k3s в AWS
 tests/
 docs/
 .github/
