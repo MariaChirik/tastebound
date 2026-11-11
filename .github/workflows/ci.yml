@@ -51,9 +51,22 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r services/${{ matrix.service }}/requirements.txt
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         working-directory: services/${{ matrix.service }}
-        run: python -m pytest -v
+        run: >-
+          mkdir -p ../../reports &&
+          python -m pytest -v
+          --junitxml=../../reports/${{ matrix.service }}-junit.xml
+          --cov=app --cov-report=term-missing
+          --cov-report=xml:../../reports/${{ matrix.service }}-coverage.xml
+          --cov-fail-under=85
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-${{ matrix.service }}
+          path: reports/
 
   frontend-test:
     name: test (frontend)
@@ -63,11 +76,21 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Run frontend tests
         working-directory: frontend
-        run: node --test
+        run: >-
+          mkdir -p ../reports &&
+          node --test --test-reporter=spec --test-reporter-destination=stdout
+          --test-reporter=junit --test-reporter-destination=../reports/frontend-junit.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-frontend
+          path: reports/
 
   secrets-scan:
     name: secrets-scan
@@ -117,8 +140,8 @@ jobs:
       - name: Validate docker-compose.yml
         run: docker compose -f deploy/docker-compose.yml config --quiet
 
-  compose-smoke:
-    name: compose smoke test
+  api-tests:
+    name: api tests (newman)
     needs: [compose-config, docker-build]
     runs-on: ubuntu-latest
     steps:
@@ -147,6 +170,22 @@ jobs:
             curl -fsS "http://localhost:8080/api/$s/health"; echo
           done
           curl -fsS http://localhost:8080/ > /dev/null
+
+      - name: Run Postman collection with Newman
+        run: |
+          mkdir -p reports && chmod 777 reports
+          docker run --rm --network tastebound_frontend \
+            -v "$PWD/tests/postman:/etc/newman" -v "$PWD/reports:/reports" \
+            postman/newman:6-alpine run tastebound.postman_collection.json \
+            -e ci.postman_environment.json \
+            --reporters cli,junit --reporter-junit-export /reports/newman-junit.xml
+
+      - name: Upload Newman report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-tests-newman
+          path: reports/
 
       - name: Show logs on failure
         if: failure()
@@ -182,7 +221,7 @@ jobs:
   publish:
     name: publish image (${{ matrix.name }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [compose-smoke]
+    needs: [api-tests]
     runs-on: ubuntu-latest
     permissions:
       contents: read
