@@ -1,0 +1,172 @@
+name: tastebound
+
+x-database-url: &database-url postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tastebound}
+x-secret: &secret ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY in .env}
+x-redis-url: &redis-url redis://redis:6379/0
+
+x-needs-db: &needs-db
+  db:
+    condition: service_healthy
+
+x-needs-redis: &needs-redis
+  redis:
+    condition: service_healthy
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-tastebound}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # тестова пошта: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+
+  auth:
+    build: ../services/auth
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      DATABASE_URL: *database-url
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    depends_on: *needs-db
+
+  catalog:
+    build: ../services/catalog
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      DATABASE_URL: *database-url
+    depends_on: *needs-db
+
+  order:
+    build: ../services/order
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      DATABASE_URL: *database-url
+      REDIS_URL: *redis-url
+      CATALOG_URL: http://catalog:5000
+      PAYMENT_URL: http://payment:5000
+      TRACKING_URL: http://tracking:5000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      catalog:
+        condition: service_started
+      payment:
+        condition: service_started
+      tracking:
+        condition: service_started
+
+  payment:
+    build: ../services/payment
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      REDIS_URL: *redis-url
+      # без ключів працює локальний тестовий режим
+      LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY:-}
+      LIQPAY_PRIVATE_KEY: ${LIQPAY_PRIVATE_KEY:-}
+      LIQPAY_RESULT_URL: ${LIQPAY_RESULT_URL:-http://localhost:8080/#orders}
+      LIQPAY_SERVER_URL: ${LIQPAY_SERVER_URL:-}
+    depends_on: *needs-redis
+
+  tracking:
+    build: ../services/tracking
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      REDIS_URL: *redis-url
+    depends_on: *needs-redis
+
+  notification:
+    build: ../services/notification
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      REDIS_URL: *redis-url
+    depends_on: *needs-redis
+
+  notification-worker:
+    build: ../services/notification
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      REDIS_URL: *redis-url
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_FROM: ${SMTP_FROM:-noreply@tastebound.local}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  recommendation:
+    build: ../services/recommendation
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET_KEY: *secret
+      REDIS_URL: *redis-url
+      CATALOG_URL: http://catalog:5000
+    depends_on:
+      redis:
+        condition: service_healthy
+      catalog:
+        condition: service_started
+
+  frontend:
+    build: ../frontend
+    restart: unless-stopped
+
+  gateway:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - auth
+      - catalog
+      - order
+      - payment
+      - tracking
+      - notification
+      - recommendation
+
+volumes:
+  postgres_data:
+  redis_data:

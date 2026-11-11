@@ -1,1 +1,4 @@
 Flask>=3.0,<4.0
+gunicorn==22.0.0
+psycopg[binary]==3.2.3
+redis==5.0.8

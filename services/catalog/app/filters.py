@@ -1,3 +1,8 @@
+ALLERGENS = ("gluten", "eggs", "fish", "milk", "peanuts")
+DIETS = ("vegan", "vegetarian", "gluten_free")
+MAX_PRICE = 10000
+
+
 def parse_list(value):
     if not value:
         return []
@@ -14,3 +19,30 @@ def filter_dishes(dishes, exclude_allergens=None, diet=None):
             continue
         result.append(dish)
     return result
+
+
+def validate_dish(data, partial=False):
+    fields = {}
+    if "name" in data or not partial:
+        name = (data.get("name") or "").strip()
+        if not 2 <= len(name) <= 80:
+            return None, "name must be 2-80 characters"
+        fields["name"] = name
+    if "price" in data or not partial:
+        price = data.get("price")
+        if isinstance(price, bool) or not isinstance(price, (int, float)) \
+                or not 0 < price <= MAX_PRICE:
+            return None, f"price must be a number from 0 to {MAX_PRICE}"
+        fields["price"] = round(float(price), 2)
+    if "composition" in data or not partial:
+        composition = (data.get("composition") or "").strip()
+        if len(composition) > 300:
+            return None, "composition must be at most 300 characters"
+        fields["composition"] = composition
+    for key, allowed in (("allergens", ALLERGENS), ("diets", DIETS)):
+        if key in data or not partial:
+            values = data.get(key) or []
+            if not isinstance(values, list) or not set(values) <= set(allowed):
+                return None, f"{key} must be a list of: {', '.join(allowed)}"
+            fields[key] = sorted(set(values))
+    return fields, None

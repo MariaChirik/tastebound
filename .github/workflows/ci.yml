@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, catalog, order]
+        service: [auth, catalog, order, payment, tracking, notification, recommendation]
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +55,20 @@ jobs:
         working-directory: services/${{ matrix.service }}
         run: python -m pytest -v
 
+  frontend-test:
+    name: test (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: node --test
+
   secrets-scan:
     name: secrets-scan
     runs-on: ubuntu-latest
@@ -67,3 +81,38 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    name: docker build (${{ matrix.name }})
+    needs: [lint, test, secrets-scan]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: auth, context: services/auth }
+          - { name: catalog, context: services/catalog }
+          - { name: order, context: services/order }
+          - { name: payment, context: services/payment }
+          - { name: tracking, context: services/tracking }
+          - { name: notification, context: services/notification }
+          - { name: recommendation, context: services/recommendation }
+          - { name: frontend, context: frontend }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t tastebound-${{ matrix.name }}:ci ${{ matrix.context }}
+
+  compose-config:
+    name: compose config
+    needs: [lint, test, secrets-scan]
+    runs-on: ubuntu-latest
+    env:
+      AUTH_SECRET_KEY: ci-only-not-a-secret
+      POSTGRES_PASSWORD: ci-only-not-a-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose -f deploy/docker-compose.yml config --quiet
