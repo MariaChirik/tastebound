@@ -31,7 +31,6 @@ export function createApi(fetchImpl = globalThis.fetch, getToken = () => null) {
   const enc = encodeURIComponent;
 
   return {
-    // Auth
     register: (email, password, role, restaurant = "") =>
       request("POST", "/api/auth/register", { email, password, role, restaurant }),
     login: (email, password) => request("POST", "/api/auth/login", { email, password }),
@@ -39,7 +38,6 @@ export function createApi(fetchImpl = globalThis.fetch, getToken = () => null) {
     setUserStatus: (email, status) =>
       request("POST", `/api/auth/users/${enc(email)}/status`, { status }),
 
-    // Catalog
     dishes: (query = "") => request("GET", `/api/catalog/dishes${query}`),
     restaurants: () => request("GET", "/api/catalog/restaurants"),
     menu: () => request("GET", "/api/catalog/menu"),
@@ -49,7 +47,6 @@ export function createApi(fetchImpl = globalThis.fetch, getToken = () => null) {
     adminDishes: () => request("GET", "/api/catalog/admin/dishes"),
     hideDish: (id, hidden) => request("POST", `/api/catalog/admin/dishes/${id}/hidden`, { hidden }),
 
-    // Order
     createOrder: (items, delivery) => request("POST", "/api/orders/orders", { items, ...delivery }),
     listOrders: () => request("GET", "/api/orders/orders"),
     getOrder: (id) => request("GET", `/api/orders/orders/${id}`),
@@ -64,18 +61,15 @@ export function createApi(fetchImpl = globalThis.fetch, getToken = () => null) {
     checkoutGroup: (code, delivery) =>
       request("POST", `/api/orders/groups/${enc(code)}/checkout`, delivery),
 
-    // Tracking
     location: (id) => request("GET", `/api/tracking/orders/${id}/location`),
     sendLocation: (id, lat, lng) =>
       request("POST", `/api/tracking/orders/${id}/location`, { lat, lng }),
 
-    // Recommendation
     rate: (dish, score) => request("POST", "/api/recommendations/ratings", { dish, score }),
     ratings: (email) => request("GET", `/api/recommendations/ratings/${enc(email)}`),
     recommendations: (email, query = "") =>
       request("GET", `/api/recommendations/recommendations/${enc(email)}${query}`),
 
-    // Notification
     notifications: (email) => request("GET", `/api/notifications/users/${enc(email)}`),
   };
 }

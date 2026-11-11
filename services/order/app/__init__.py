@@ -156,7 +156,6 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
         if status in TRACKING_STATUS:
             payload = {"status": TRACKING_STATUS[status]}
             if status == "delivering":
-                # маршрут для мапи кур'єра
                 payload.update(
                     origin={"lat": order["restaurant_lat"], "lng": order["restaurant_lng"]},
                     destination={"lat": order["lat"], "lng": order["lng"]},
@@ -291,7 +290,6 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
             return jsonify(error="this group order is already placed"), 409
         if not group["items"]:
             return jsonify(error="the group cart is empty"), 400
-        # меню могло змінитися, тому перевіряємо ще раз
         lines = [{"dish_id": item["dish_id"], "quantity": item["quantity"]}
                  for item in group["items"]]
         dishes = catalog.dishes(sorted({line["dish_id"] for line in lines}))

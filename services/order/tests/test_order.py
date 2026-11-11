@@ -15,7 +15,6 @@ from app.security import TokenAuth
 
 SECRET = "test-secret"
 NOW = 1_800_000_000.0
-# ~3 км від ресторану «Хата»
 HOME = {"address": "вул. Велика Васильківська, 100", "lat": 50.4231, "lng": 30.5195}
 
 
@@ -184,7 +183,7 @@ def test_order_needs_address_and_point_on_map(env):
     response = client.post("/orders", json={"items": [{"dish_id": 1, "quantity": 1}]},
                            headers=ANN)
     assert response.status_code == 400
-    far = place(client, lat=49.84, lng=24.03)  # Львів
+    far = place(client, lat=49.84, lng=24.03)
     assert far.status_code == 400
 
 

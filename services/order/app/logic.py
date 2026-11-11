@@ -9,7 +9,6 @@ TRANSITIONS_BY_ROLE = {
     "courier": ("delivering",),
 }
 
-# Час доставки, хвилини
 BASE_COOK_MINUTES = 15
 EXTRA_PORTION_MINUTES = 2
 MINUTES_PER_ACTIVE_ORDER = 4

@@ -25,7 +25,7 @@ class PostgresDb:
     dialect = "postgres"
 
     def __init__(self, url):
-        import psycopg  # імпорт тут, щоб тести не залежали від драйвера
+        import psycopg
 
         self._psycopg = psycopg
         self._url = url
@@ -46,7 +46,7 @@ def connect(url, retries=15, delay=2):
         try:
             db.query("SELECT 1")
             return db
-        except Exception as err:  # psycopg.OperationalError, поки база стартує
+        except Exception as err:
             if attempt == retries:
                 raise
             log.warning("База ще недоступна (%s), спроба %d з %d", err, attempt, retries)

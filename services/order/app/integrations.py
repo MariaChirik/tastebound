@@ -71,7 +71,7 @@ class HttpPayments:
 class RedisEvents:
 
     def __init__(self, url):
-        import redis  # імпорт тут, щоб тести не залежали від клієнта
+        import redis
 
         self._redis = redis.from_url(url, decode_responses=True)
 
