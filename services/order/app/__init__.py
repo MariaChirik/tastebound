@@ -27,6 +27,7 @@ from app.logic import (
     kitchen_load,
     next_status,
     parse_location,
+    parse_phone,
     price_lines,
     road_minutes,
     shares_of,
@@ -44,13 +45,18 @@ ID_COLUMN = {
 COLUMNS = (
     "id, owner, participants, restaurant, items, shares, total, status, address, lat, lng,"
     " restaurant_lat, restaurant_lng, distance_km, eta_minutes, created_at, deliver_at,"
-    " scheduled, group_code"
+    " scheduled, group_code, phone"
 )
 JSON_COLUMNS = ("items", "shares")
 GROUP_COLUMNS = "code, owner, restaurant, items, status, order_id, created_at"
 
 
 def schema(dialect):
+    upgrades = []
+    if dialect == "postgres":
+        upgrades.append(
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''"
+        )
     return [
         f"""
         CREATE TABLE IF NOT EXISTS orders (
@@ -72,7 +78,8 @@ def schema(dialect):
             created_at DOUBLE PRECISION NOT NULL,
             deliver_at DOUBLE PRECISION NOT NULL,
             scheduled INTEGER NOT NULL DEFAULT 0,
-            group_code TEXT NOT NULL DEFAULT ''
+            group_code TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT ''
         )
         """,
         """
@@ -86,7 +93,7 @@ def schema(dialect):
             created_at DOUBLE PRECISION NOT NULL
         )
         """,
-    ]
+    ] + upgrades
 
 
 def row_to_order(row):
@@ -126,7 +133,7 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
 
     @app.errorhandler(ServiceUnavailable)
     def dependency_down(err):
-        return jsonify(error="a required service is unavailable, try again later"), 503
+        return jsonify(error="сервіс тимчасово недоступний, спробуйте пізніше"), 503
 
     def find_order(order_id):
         rows = db.query(f"SELECT {COLUMNS} FROM orders WHERE id = ?", (order_id,))
@@ -181,14 +188,17 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
         address, lat, lng, error = parse_location(data)
         if error:
             return None, error
+        phone, error = parse_phone(data.get("phone"))
+        if error:
+            return None, error
         place = catalog.restaurant(restaurant)
         if place is None:
-            return None, "restaurant not found"
+            return None, "ресторан не знайдено"
         if place["overloaded"]:
             return None, f"ресторан «{restaurant}» тимчасово не приймає нових замовлень"
         distance = distance_km(place["lat"], place["lng"], lat, lng)
         if distance > MAX_DISTANCE_KM:
-            return None, f"delivery is possible within {MAX_DISTANCE_KM} km of the restaurant"
+            return None, f"доставка можлива в межах {MAX_DISTANCE_KM} км від ресторану"
 
         now = clock()
         active = select_orders("restaurant = ? AND status IN ('created', 'cooking')",
@@ -202,13 +212,14 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
         participants = "," + ",".join(shares) + ","
         rows = db.query(
             f"INSERT INTO orders ({COLUMNS.replace('id, ', '', 1)}) VALUES"
-            " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (
                 owner, participants, restaurant,
                 json.dumps(items, ensure_ascii=False), json.dumps(shares, ensure_ascii=False),
                 calculate_total(items), "awaiting_payment", address, lat, lng,
                 place["lat"], place["lng"], distance, eta, now,
                 scheduled_for or now + eta * 60, int(scheduled_for is not None), group_code,
+                phone,
             ),
         )
         order = find_order(rows[0][0])
@@ -251,7 +262,7 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def get_group(code):
         group = find_group(code)
         if not group:
-            return jsonify(error="group not found"), 404
+            return jsonify(error="спільне замовлення не знайдено"), 404
         return jsonify(group)
 
     @app.put("/groups/<code>/items")
@@ -259,9 +270,9 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def set_group_items(code):
         group = find_group(code)
         if not group:
-            return jsonify(error="group not found"), 404
+            return jsonify(error="спільне замовлення не знайдено"), 404
         if group["status"] != "open":
-            return jsonify(error="this group order is already placed"), 409
+            return jsonify(error="спільне замовлення вже оформлено або скасовано"), 409
         user = g.user["email"]
         others = [item for item in group["items"] if item["user"] != user]
         lines = (request.get_json(silent=True) or {}).get("items")
@@ -271,11 +282,28 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
             if error:
                 return jsonify(error=error), 400
             if others and group["restaurant"] and restaurant != group["restaurant"]:
-                return jsonify(error=f"the group orders from «{group['restaurant']}»"), 400
+                place = group["restaurant"]
+                return jsonify(error=f"у спільному замовленні страви з ресторану «{place}»"), 400
         elif not others:
             restaurant = ""
         db.query("UPDATE order_groups SET items = ?, restaurant = ? WHERE code = ?",
                  (json.dumps(others + mine, ensure_ascii=False), restaurant, code))
+        return jsonify(find_group(code))
+
+    @app.post("/groups/<code>/cancel")
+    @auth.require("client")
+    def cancel_group(code):
+        group = find_group(code)
+        if not group:
+            return jsonify(error="спільне замовлення не знайдено"), 404
+        if group["owner"] != g.user["email"]:
+            return jsonify(error="скасувати спільне замовлення може лише організатор"), 403
+        if group["status"] != "open":
+            return jsonify(error="спільне замовлення вже оформлено або скасовано"), 409
+        db.query("UPDATE order_groups SET status = 'cancelled' WHERE code = ?", (code,))
+        for user in group["shares"]:
+            if user != group["owner"]:
+                events.publish(user, "Організатор скасував спільне замовлення")
         return jsonify(find_group(code))
 
     @app.post("/groups/<code>/checkout")
@@ -283,13 +311,13 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def checkout_group(code):
         group = find_group(code)
         if not group:
-            return jsonify(error="group not found"), 404
+            return jsonify(error="спільне замовлення не знайдено"), 404
         if group["owner"] != g.user["email"]:
-            return jsonify(error="only the group creator can place the order"), 403
+            return jsonify(error="оформити спільне замовлення може лише організатор"), 403
         if group["status"] != "open":
-            return jsonify(error="this group order is already placed"), 409
+            return jsonify(error="спільне замовлення вже оформлено або скасовано"), 409
         if not group["items"]:
-            return jsonify(error="the group cart is empty"), 400
+            return jsonify(error="спільний кошик порожній"), 400
         lines = [{"dish_id": item["dish_id"], "quantity": item["quantity"]}
                  for item in group["items"]]
         dishes = catalog.dishes(sorted({line["dish_id"] for line in lines}))
@@ -331,7 +359,7 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def get_order(order_id):
         order = find_order(order_id)
         if not order or not can_view(order, g.user):
-            return jsonify(error="order not found"), 404
+            return jsonify(error="замовлення не знайдено"), 404
         return jsonify(order)
 
     def apply_payment(order, user, payment):
@@ -346,7 +374,7 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def my_share(order_id):
         order = find_order(order_id)
         if not order or g.user["email"] not in order["shares"]:
-            return None, (jsonify(error="order not found"), 404)
+            return None, (jsonify(error="замовлення не знайдено"), 404)
         return order, None
 
     @app.post("/orders/<int:order_id>/pay")
@@ -356,13 +384,13 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
         if failure:
             return failure
         if order["status"] != "awaiting_payment":
-            return jsonify(error="this order does not wait for payment"), 409
+            return jsonify(error="це замовлення не очікує оплати"), 409
         user = g.user["email"]
         method = (request.get_json(silent=True) or {}).get("method", "card")
         code, payment = payments.pay(bearer_header(), order_id, order["shares"][user]["amount"],
                                      method)
         if code not in (200, 201):
-            return jsonify(error=(payment or {}).get("error", "payment failed")), code
+            return jsonify(error=(payment or {}).get("error", "оплата не пройшла")), code
         apply_payment(order, user, payment)
         return jsonify(order=order, checkout=payment.get("checkout")), 201
 
@@ -374,7 +402,7 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
             return failure
         code, payment = payments.check(bearer_header(), order_id)
         if code != 200:
-            return jsonify(error=(payment or {}).get("error", "payment check failed")), code
+            return jsonify(error=(payment or {}).get("error", "не вдалося перевірити оплату")), code
         if order["status"] == "awaiting_payment":
             apply_payment(order, g.user["email"], payment)
         return jsonify(order=order)
@@ -384,15 +412,15 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def cancel_order(order_id):
         order = find_order(order_id)
         if not order or g.user["email"] not in order["participants"]:
-            return jsonify(error="order not found"), 404
+            return jsonify(error="замовлення не знайдено"), 404
         if order["owner"] != g.user["email"]:
-            return jsonify(error="only the person who placed the order can cancel it"), 403
+            return jsonify(error="скасувати замовлення може лише той, хто його оформив"), 403
         if not can_cancel(order["status"]):
-            return jsonify(error="order can no longer be cancelled"), 409
+            return jsonify(error="замовлення вже не можна скасувати"), 409
         if any(share["status"] != "unpaid" for share in order["shares"].values()):
             code, result = payments.refund(bearer_header(), order_id)
             if code != 200:
-                return jsonify(error="refund failed, the order was not cancelled"), 502
+                return jsonify(error="не вдалося повернути кошти, замовлення не скасовано"), 502
             for payment in result["payments"]:
                 if payment["user"] in order["shares"]:
                     order["shares"][payment["user"]]["status"] = payment["status"]
@@ -404,9 +432,9 @@ def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
     def advance_order(order_id):
         order = find_order(order_id)
         if not order or not can_view(order, g.user):
-            return jsonify(error="order not found"), 404
+            return jsonify(error="замовлення не знайдено"), 404
         if not can_advance(g.user["role"], order["status"]):
-            return jsonify(error="this role cannot change the order now"), 409
+            return jsonify(error="зараз ви не можете змінити статус цього замовлення"), 409
         status = next_status(order["status"])
         if status == "delivered" and any(s["status"] == "cash_due"
                                          for s in order["shares"].values()):

@@ -197,6 +197,12 @@ export function itemsByUser(items) {
   return result;
 }
 
+export function normalizePhone(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("0")) digits = `38${digits}`;
+  return digits.length === 12 && digits.startsWith("380") ? `+${digits}` : null;
+}
+
 export function scheduleToUnix(value) {
   if (!value) return null;
   const time = new Date(value).getTime();

@@ -113,7 +113,7 @@ def create_app(db=None, auth=None):
     def menu():
         place = restaurants().get(g.user.get("restaurant"))
         if not place:
-            return jsonify(error="restaurant not found"), 404
+            return jsonify(error="ресторан не знайдено"), 404
         dishes = dishes_where("restaurant = ?", (place["name"],))
         return jsonify(restaurant=place, dishes=dishes)
 
@@ -122,7 +122,7 @@ def create_app(db=None, auth=None):
     def add_dish():
         restaurant = g.user.get("restaurant")
         if restaurant not in restaurants():
-            return jsonify(error="restaurant not found"), 404
+            return jsonify(error="ресторан не знайдено"), 404
         fields, error = validate_dish(request.get_json(silent=True) or {})
         if error:
             return jsonify(error=error), 400
@@ -138,14 +138,14 @@ def create_app(db=None, auth=None):
     @auth.require("restaurant_staff")
     def update_dish(dish_id):
         if not own_dish(dish_id):
-            return jsonify(error="dish not found"), 404
+            return jsonify(error="страву не знайдено"), 404
         data = request.get_json(silent=True) or {}
         fields, error = validate_dish(data, partial=True)
         if error:
             return jsonify(error=error), 400
         if "available" in data:
             if not isinstance(data["available"], bool):
-                return jsonify(error="available must be true or false"), 400
+                return jsonify(error="некоректне значення наявності"), 400
             fields["available"] = int(data["available"])
         for key in ("allergens", "diets"):
             if key in fields:
@@ -161,10 +161,10 @@ def create_app(db=None, auth=None):
     def set_overload():
         value = (request.get_json(silent=True) or {}).get("overloaded")
         if not isinstance(value, bool):
-            return jsonify(error="overloaded must be true or false"), 400
+            return jsonify(error="некоректне значення режиму перевантаження"), 400
         restaurant = g.user.get("restaurant")
         if restaurant not in restaurants():
-            return jsonify(error="restaurant not found"), 404
+            return jsonify(error="ресторан не знайдено"), 404
         db.query("UPDATE restaurants SET overloaded = ? WHERE name = ?", (int(value), restaurant))
         return jsonify(restaurants()[restaurant])
 
@@ -178,9 +178,9 @@ def create_app(db=None, auth=None):
     def hide_dish(dish_id):
         value = (request.get_json(silent=True) or {}).get("hidden")
         if not isinstance(value, bool):
-            return jsonify(error="hidden must be true or false"), 400
+            return jsonify(error="некоректне значення"), 400
         if not find_dish(dish_id):
-            return jsonify(error="dish not found"), 404
+            return jsonify(error="страву не знайдено"), 404
         db.query("UPDATE dishes SET hidden = ? WHERE id = ?", (int(value), dish_id))
         return jsonify(find_dish(dish_id))
 

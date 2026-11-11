@@ -102,6 +102,10 @@ label { display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px
 ul.lines { padding: 0; margin: 0; }
 
 .message {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: var(--bg);
   max-width: 960px;
   margin: 12px auto 0;
   padding: 0 20px;
@@ -154,7 +158,7 @@ ul.alerts { list-style: none; padding: 0; margin: 0; }
 .columns > div { display: flex; flex-direction: column; gap: 14px; }
 .grow { flex: 1; min-width: 160px; }
 label.block { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-label.block input[type="radio"] { align-self: flex-start; }
+label.choice { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 4px 0; }
 .checks { display: flex; flex-wrap: wrap; gap: 2px 6px; }
 .warn { color: #b07a12; font-weight: 600; }
 
@@ -182,3 +186,5 @@ tr.highlight { background: #fff8e6; }
 
 [hidden] { display: none !important; }
 .card p, .panel p { margin: 0; }
+
+button.danger { border-color: var(--danger); color: var(--danger); }

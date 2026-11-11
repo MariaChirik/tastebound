@@ -45,7 +45,7 @@ def create_app(store=None, catalog=None, auth=None):
 
     @app.errorhandler(redis.RedisError)
     def storage_down(err):
-        return jsonify(error="storage unavailable"), 503
+        return jsonify(error="сховище даних тимчасово недоступне"), 503
 
     @app.get("/health")
     def health():
@@ -59,7 +59,7 @@ def create_app(store=None, catalog=None, auth=None):
         user, dish, score = g.user["email"], data.get("dish"), data.get("score")
         valid_score = isinstance(score, int) and not isinstance(score, bool) and 1 <= score <= 5
         if not dish or not valid_score:
-            return jsonify(error="dish and score 1-5 are required"), 400
+            return jsonify(error="оцінка має бути від 1 до 5"), 400
         key = f"ratings:{user}"
         previous = store.zscore(key, dish)
         store.zadd(key, {dish: score})
@@ -75,7 +75,7 @@ def create_app(store=None, catalog=None, auth=None):
     @auth.require()
     def user_ratings(user):
         if not own(user):
-            return jsonify(error="forbidden"), 403
+            return jsonify(error="недостатньо прав для цієї дії"), 403
         return jsonify(user=user, ratings=dict(store.zrange(f"ratings:{user}", 0, -1,
                                                             withscores=True)))
 
@@ -83,7 +83,7 @@ def create_app(store=None, catalog=None, auth=None):
     @auth.require()
     def recommend(user):
         if not own(user):
-            return jsonify(error="forbidden"), 403
+            return jsonify(error="недостатньо прав для цієї дії"), 403
         excluded = request.args.get("exclude_allergens", "")
         try:
             dishes = catalog.dishes(excluded)

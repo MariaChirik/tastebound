@@ -26,6 +26,7 @@ import {
   parseGroupCode,
   itemsByUser,
   scheduleToUnix,
+  normalizePhone,
 } from "../js/logic.js";
 
 const BORSCH = { id: 1, name: "Борщ", price: 135, restaurant: "Хата", allergens: [] };
@@ -171,4 +172,11 @@ test("only notifications newer than the last visit are unseen", () => {
   const items = [{ at: 30 }, { at: 20 }, { at: 10 }];
   assert.equal(unseenCount(items, 0), 3);
   assert.equal(unseenCount(items, 20), 1);
+});
+
+test("phone numbers are normalized to +380 format", () => {
+  assert.equal(normalizePhone("+38 (050) 123-45-67"), "+380501234567");
+  assert.equal(normalizePhone("0501234567"), "+380501234567");
+  assert.equal(normalizePhone("12345"), null);
+  assert.equal(normalizePhone(""), null);
 });

@@ -26,23 +26,23 @@ def validate_dish(data, partial=False):
     if "name" in data or not partial:
         name = (data.get("name") or "").strip()
         if not 2 <= len(name) <= 80:
-            return None, "name must be 2-80 characters"
+            return None, "назва має містити від 2 до 80 символів"
         fields["name"] = name
     if "price" in data or not partial:
         price = data.get("price")
         if isinstance(price, bool) or not isinstance(price, (int, float)) \
                 or not 0 < price <= MAX_PRICE:
-            return None, f"price must be a number from 0 to {MAX_PRICE}"
+            return None, f"ціна має бути від 0 до {MAX_PRICE} грн"
         fields["price"] = round(float(price), 2)
     if "composition" in data or not partial:
         composition = (data.get("composition") or "").strip()
         if len(composition) > 300:
-            return None, "composition must be at most 300 characters"
+            return None, "склад може містити до 300 символів"
         fields["composition"] = composition
     for key, allowed in (("allergens", ALLERGENS), ("diets", DIETS)):
         if key in data or not partial:
             values = data.get(key) or []
             if not isinstance(values, list) or not set(values) <= set(allowed):
-                return None, f"{key} must be a list of: {', '.join(allowed)}"
+                return None, "некоректний список алергенів або дієт"
             fields[key] = sorted(set(values))
     return fields, None

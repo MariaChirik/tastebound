@@ -25,13 +25,24 @@ export function pickerMap(container, point, onPick) {
   const map = baseMap(container, point ?? DEFAULT_POINT);
   if (!map) return null;
   let marker = point ? L.marker([point.lat, point.lng]).addTo(map) : null;
+  const place = (lat, lng) => {
+    if (marker) marker.setLatLng([lat, lng]);
+    else marker = L.marker([lat, lng]).addTo(map);
+  };
   map.on("click", (event) => {
     const picked = { lat: +event.latlng.lat.toFixed(6), lng: +event.latlng.lng.toFixed(6) };
-    if (marker) marker.setLatLng(event.latlng);
-    else marker = L.marker(event.latlng).addTo(map);
+    place(picked.lat, picked.lng);
     onPick(picked);
   });
-  return map;
+  return {
+    setPoint(picked) {
+      place(picked.lat, picked.lng);
+      map.setView([picked.lat, picked.lng], 16);
+    },
+    remove() {
+      map.remove();
+    },
+  };
 }
 
 export function trackingMap(container, origin, destination) {

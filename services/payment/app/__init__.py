@@ -47,7 +47,7 @@ def create_app(store=None, gateway="env", auth=None):
 
     @app.errorhandler(redis.RedisError)
     def storage_down(err):
-        return jsonify(error="storage unavailable"), 503
+        return jsonify(error="сховище даних тимчасово недоступне"), 503
 
     @app.get("/health")
     def health():
@@ -83,13 +83,13 @@ def create_app(store=None, gateway="env", auth=None):
         method = data.get("method", "card")
         if not order_id or isinstance(amount, bool) or not isinstance(amount, (int, float)) \
                 or amount <= 0:
-            return jsonify(error="order_id and positive amount are required"), 400
+            return jsonify(error="потрібні номер замовлення і сума більше нуля"), 400
         if method not in METHODS:
-            return jsonify(error="method must be card or cash"), 400
+            return jsonify(error="оберіть оплату карткою або готівкою"), 400
         user = g.user["email"]
         existing = load(order_id, user)
         if existing and existing["status"] in ("paid", "cash_due"):
-            return jsonify(error="this share is already settled"), 409
+            return jsonify(error="цю частку вже оплачено"), 409
 
         payment = {
             "id": str(uuid.uuid4()), "order_id": order_id, "user": user,
@@ -114,13 +114,13 @@ def create_app(store=None, gateway="env", auth=None):
     def check(order_id):
         payment = load(order_id, g.user["email"])
         if not payment:
-            return jsonify(error="payment not found"), 404
+            return jsonify(error="платіж не знайдено"), 404
         if payment["status"] == "pending" and gateway is not None:
             try:
                 status = gateway.status(reference(order_id, payment["user"]))
             except Exception as err:
                 log.warning("LiqPay недоступний: %s", err)
-                return jsonify(error="payment gateway unavailable"), 502
+                return jsonify(error="платіжний сервіс тимчасово недоступний"), 502
             if status in lp.PAID_STATUSES:
                 mark_paid(payment)
             elif status in lp.FAILED_STATUSES:
@@ -130,11 +130,11 @@ def create_app(store=None, gateway="env", auth=None):
     @app.post("/liqpay/callback")
     def callback():
         if gateway is None:
-            return jsonify(error="LiqPay is not configured"), 404
+            return jsonify(error="LiqPay не налаштовано"), 404
         result = lp.decode(request.form.get("data"), request.form.get("signature"),
                            gateway.private_key)
         if result is None:
-            return jsonify(error="invalid signature"), 400
+            return jsonify(error="некоректний підпис"), 400
         prefix, _, rest = str(result.get("order_id", "")).partition("-")
         order_id, _, user = rest.partition("-")
         payment = load(order_id, user) if prefix == "tastebound" else None
@@ -150,7 +150,7 @@ def create_app(store=None, gateway="env", auth=None):
     def get_payments(order_id):
         users = sorted(store.smembers(f"payments:{order_id}"))
         if not users:
-            return jsonify(error="payment not found"), 404
+            return jsonify(error="платіж не знайдено"), 404
         return jsonify([load(order_id, user) for user in users])
 
     @app.post("/payments/<order_id>/cash")
@@ -168,7 +168,7 @@ def create_app(store=None, gateway="env", auth=None):
     def refund(order_id):
         users = sorted(store.smembers(f"payments:{order_id}"))
         if not users:
-            return jsonify(error="payment not found"), 404
+            return jsonify(error="платіж не знайдено"), 404
         result = []
         for user in users:
             payment = load(order_id, user)

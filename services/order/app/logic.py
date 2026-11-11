@@ -1,4 +1,5 @@
 import math
+import re
 
 STATUS_FLOW = ["awaiting_payment", "created", "cooking", "delivering", "delivered"]
 CANCELLABLE_STATUSES = ("awaiting_payment", "created")
@@ -39,17 +40,17 @@ TRACKING_STATUS = {
 
 def validate_lines(lines):
     if not isinstance(lines, list) or not lines:
-        return None, "items must be a non-empty list"
+        return None, "кошик порожній"
     merged = {}
     for line in lines:
         if not isinstance(line, dict):
-            return None, "every item needs dish_id and quantity"
+            return None, "некоректна позиція в кошику"
         dish_id, quantity = line.get("dish_id"), line.get("quantity")
         if isinstance(dish_id, bool) or not isinstance(dish_id, int):
-            return None, "dish_id must be an integer"
+            return None, "некоректна позиція в кошику"
         if isinstance(quantity, bool) or not isinstance(quantity, int) \
                 or not 1 <= quantity <= MAX_QUANTITY:
-            return None, f"quantity must be an integer from 1 to {MAX_QUANTITY}"
+            return None, f"кількість має бути від 1 до {MAX_QUANTITY}"
         merged[dish_id] = merged.get(dish_id, 0) + quantity
     return [{"dish_id": key, "quantity": value} for key, value in merged.items()], None
 
@@ -60,7 +61,7 @@ def price_lines(lines, dishes, user):
     for line in lines:
         dish = by_id.get(line["dish_id"])
         if dish is None:
-            return None, None, f"dish {line['dish_id']} not found"
+            return None, None, "страву не знайдено в меню"
         if dish.get("restaurant_overloaded"):
             message = f"ресторан «{dish['restaurant']}» тимчасово не приймає нових замовлень"
             return None, None, message
@@ -72,7 +73,7 @@ def price_lines(lines, dishes, user):
             "quantity": line["quantity"], "restaurant": dish["restaurant"], "user": user,
         })
     if len(restaurants) > 1:
-        return None, None, "one order can contain dishes from one restaurant only"
+        return None, None, "одне замовлення може містити страви лише одного ресторану"
     return items, restaurants.pop(), None
 
 
@@ -96,13 +97,22 @@ def parse_location(data):
     address = (data.get("address") or "").strip()
     lat, lng = data.get("lat"), data.get("lng")
     if not 3 <= len(address) <= 200:
-        return None, None, None, "address must be 3-200 characters"
+        return None, None, None, "вкажіть адресу доставки"
     for value in (lat, lng):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None, None, None, "lat and lng must be numbers"
+            return None, None, None, "позначте місце доставки на мапі"
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-        return None, None, None, "lat or lng out of range"
+        return None, None, None, "некоректна точка на мапі"
     return address, float(lat), float(lng), None
+
+
+def parse_phone(value):
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) == 10 and digits.startswith("0"):
+        digits = "38" + digits
+    if len(digits) != 12 or not digits.startswith("380"):
+        return None, "вкажіть номер телефону у форматі +380XXXXXXXXX"
+    return "+" + digits, None
 
 
 def distance_km(lat1, lng1, lat2, lng2):
@@ -136,11 +146,11 @@ def validate_schedule(value, now, eta_minutes):
     if value is None:
         return None, None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None, "scheduled_for must be a unix time in seconds"
+        return None, "некоректний час доставки"
     if value < now + eta_minutes * 60:
-        return None, f"the earliest possible delivery is in {eta_minutes} minutes"
+        return None, f"доставити можна не раніше ніж через {eta_minutes} хв"
     if value > now + MAX_SCHEDULE_AHEAD_SECONDS:
-        return None, "orders can be scheduled at most 7 days ahead"
+        return None, "замовити можна не більше ніж на 7 днів наперед"
     return float(value), None
 
 
