@@ -49,7 +49,7 @@ def create_app(store=None, clock=time.time, auth=None, mailer=None):
 
     @app.errorhandler(redis.RedisError)
     def storage_down(err):
-        return jsonify(error="storage unavailable"), 503
+        return jsonify(error="сховище даних тимчасово недоступне"), 503
 
     @app.get("/health")
     def health():
@@ -62,7 +62,7 @@ def create_app(store=None, clock=time.time, auth=None, mailer=None):
         data = request.get_json(silent=True) or {}
         user, message = data.get("user"), data.get("message")
         if not user or not message:
-            return jsonify(error="user and message are required"), 400
+            return jsonify(error="потрібні користувач і текст повідомлення"), 400
         store.rpush(QUEUE, f"{user}|{message}")
         return jsonify(queued=True, user=user), 202
 
@@ -83,7 +83,7 @@ def create_app(store=None, clock=time.time, auth=None, mailer=None):
     @auth.require()
     def history(user):
         if user != g.user["email"]:
-            return jsonify(error="you can read only your own notifications"), 403
+            return jsonify(error="можна переглядати лише власні сповіщення"), 403
         items = [json.loads(raw) for raw in store.lrange(history_key(user), 0, HISTORY_SIZE - 1)]
         return jsonify(user=user, items=items)
 

@@ -30,13 +30,13 @@ log = logging.getLogger("auth")
 
 def validate_registration(email, password, role, restaurant=""):
     if not email or "@" not in email:
-        return "invalid email"
+        return "некоректний email"
     if not password or len(password) < MIN_PASSWORD_LENGTH:
-        return "password must be at least 8 characters"
+        return "пароль має містити щонайменше 8 символів"
     if role not in PUBLIC_ROLES:
-        return "role must be one of: client, restaurant_staff, courier"
+        return "оберіть роль: клієнт, співробітник ресторану або кур'єр"
     if role == "restaurant_staff" and not restaurant:
-        return "restaurant staff must choose a restaurant"
+        return "співробітник має обрати ресторан"
     return None
 
 
@@ -75,9 +75,9 @@ def create_app(db=None, secret=None, admin_email=None, admin_password=None):
             try:
                 user = signer.loads(header.removeprefix("Bearer "), max_age=TOKEN_MAX_AGE_SECONDS)
             except BadSignature:
-                return jsonify(error="authentication required"), 401
+                return jsonify(error="потрібно увійти в акаунт"), 401
             if user.get("role") != "admin":
-                return jsonify(error="forbidden for this role"), 403
+                return jsonify(error="недостатньо прав для цієї дії"), 403
             g.user = user
             return view(*args, **kwargs)
 
@@ -99,7 +99,7 @@ def create_app(db=None, secret=None, admin_email=None, admin_password=None):
         if error:
             return jsonify(error=error), 400
         if find_user(email):
-            return jsonify(error="user already exists"), 409
+            return jsonify(error="користувач з таким email уже існує"), 409
 
         status = "pending" if role in ROLES_NEEDING_APPROVAL else "active"
         db.query(
@@ -116,11 +116,11 @@ def create_app(db=None, secret=None, admin_email=None, admin_password=None):
         user = find_user(email)
 
         if not user or not check_password_hash(user["password_hash"], data.get("password") or ""):
-            return jsonify(error="invalid credentials"), 401
+            return jsonify(error="неправильний email або пароль"), 401
         if user["status"] == "pending":
-            return jsonify(error="account is waiting for administrator approval"), 403
+            return jsonify(error="акаунт ще не підтвердив адміністратор"), 403
         if user["status"] == "blocked":
-            return jsonify(error="account is blocked"), 403
+            return jsonify(error="акаунт заблоковано"), 403
 
         claims = {"email": email, "role": user["role"], "restaurant": user["restaurant"]}
         return jsonify(token=signer.dumps(claims), role=user["role"],
@@ -138,12 +138,12 @@ def create_app(db=None, secret=None, admin_email=None, admin_password=None):
     def set_user_status(email):
         status = (request.get_json(silent=True) or {}).get("status")
         if status not in USER_STATUSES:
-            return jsonify(error=f"status must be one of {USER_STATUSES}"), 400
+            return jsonify(error="невідомий стан користувача"), 400
         user = find_user(email.strip().lower())
         if not user:
-            return jsonify(error="user not found"), 404
+            return jsonify(error="користувача не знайдено"), 404
         if user["role"] == "admin":
-            return jsonify(error="administrator status cannot be changed"), 409
+            return jsonify(error="стан адміністратора змінити не можна"), 409
         db.query("UPDATE users SET status = ? WHERE email = ?", (status, user["email"]))
         return jsonify(email=user["email"], role=user["role"], restaurant=user["restaurant"],
                        status=status)

@@ -117,6 +117,7 @@ test("all routes match the gateway prefixes", async () => {
   await recordingApi.createGroup();
   await recordingApi.setGroupItems("abc", []);
   await recordingApi.checkoutGroup("abc", {});
+  await recordingApi.cancelGroup("abc");
   await recordingApi.location(1);
   await recordingApi.sendLocation(1, 50, 30);
   await recordingApi.menu();
@@ -131,6 +132,7 @@ test("all routes match the gateway prefixes", async () => {
     ["POST", "/api/orders/groups"],
     ["PUT", "/api/orders/groups/abc/items"],
     ["POST", "/api/orders/groups/abc/checkout"],
+    ["POST", "/api/orders/groups/abc/cancel"],
     ["GET", "/api/tracking/orders/1/location"],
     ["POST", "/api/tracking/orders/1/location"],
     ["GET", "/api/catalog/menu"],

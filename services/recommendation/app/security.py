@@ -28,9 +28,9 @@ class TokenAuth:
             def wrapper(*args, **kwargs):
                 user = self.current_user()
                 if user is None:
-                    return jsonify(error="authentication required"), 401
+                    return jsonify(error="потрібно увійти в акаунт"), 401
                 if roles and user.get("role") not in roles:
-                    return jsonify(error="forbidden for this role"), 403
+                    return jsonify(error="недостатньо прав для цієї дії"), 403
                 g.user = user
                 return view(*args, **kwargs)
 

@@ -3,6 +3,7 @@ from itsdangerous import URLSafeTimedSerializer
 
 from app import create_app
 from app.logic import (
+    parse_phone,
     distance_km,
     estimate_delivery_minutes,
     kitchen_load,
@@ -15,7 +16,8 @@ from app.security import TokenAuth
 
 SECRET = "test-secret"
 NOW = 1_800_000_000.0
-HOME = {"address": "вул. Велика Васильківська, 100", "lat": 50.4231, "lng": 30.5195}
+HOME = {"address": "вул. Велика Васильківська, 100", "lat": 50.4231, "lng": 30.5195,
+        "phone": "+380501234567"}
 
 
 def headers(email, role="client", restaurant=""):
@@ -349,3 +351,30 @@ def test_empty_group_cannot_be_ordered(env):
     code = client.post("/groups", headers=ANN).get_json()["code"]
     assert client.post(f"/groups/{code}/checkout", json=HOME, headers=ANN).status_code == 400
     assert client.get("/groups/unknown", headers=ANN).status_code == 404
+
+
+def test_owner_cancels_open_group_and_nobody_can_add_more(env):
+    client, recorder, *_ = env
+    code = client.post("/groups", headers=ANN).get_json()["code"]
+    client.put(f"/groups/{code}/items", json={"items": [{"dish_id": 1, "quantity": 1}]},
+               headers=BOB)
+    assert client.post(f"/groups/{code}/cancel", headers=BOB).status_code == 403
+    assert client.post(f"/groups/{code}/cancel",
+                       headers=ANN).get_json()["status"] == "cancelled"
+    assert ("bob@example.com", "Організатор скасував спільне замовлення") in recorder.events
+    late = client.put(f"/groups/{code}/items", json={"items": [{"dish_id": 1, "quantity": 1}]},
+                      headers=BOB)
+    assert late.status_code == 409
+    assert client.post(f"/groups/{code}/checkout", json=HOME, headers=ANN).status_code == 409
+    assert client.post(f"/groups/{code}/cancel", headers=ANN).status_code == 409
+
+
+def test_phone_is_required_and_normalized(env):
+    client, *_ = env
+    assert parse_phone("+38 (050) 123-45-67") == ("+380501234567", None)
+    assert parse_phone("0501234567") == ("+380501234567", None)
+    assert parse_phone("12345")[1]
+    assert parse_phone(None)[1]
+    assert place(client, phone="").status_code == 400
+    order = place(client, phone="050 123 45 67").get_json()
+    assert order["phone"] == "+380501234567"

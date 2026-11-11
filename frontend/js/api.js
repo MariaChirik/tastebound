@@ -58,6 +58,7 @@ export function createApi(fetchImpl = globalThis.fetch, getToken = () => null) {
     getGroup: (code) => request("GET", `/api/orders/groups/${enc(code)}`),
     setGroupItems: (code, items) =>
       request("PUT", `/api/orders/groups/${enc(code)}/items`, { items }),
+    cancelGroup: (code) => request("POST", `/api/orders/groups/${enc(code)}/cancel`, {}),
     checkoutGroup: (code, delivery) =>
       request("POST", `/api/orders/groups/${enc(code)}/checkout`, delivery),
 

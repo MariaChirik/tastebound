@@ -38,7 +38,7 @@ def create_app(store=None, auth=None, clock=time.time):
 
     @app.errorhandler(redis.RedisError)
     def storage_down(err):
-        return jsonify(error="storage unavailable"), 503
+        return jsonify(error="сховище даних тимчасово недоступне"), 503
 
     @app.get("/health")
     def health():
@@ -54,14 +54,14 @@ def create_app(store=None, auth=None, clock=time.time):
         data = request.get_json(silent=True) or {}
         status = data.get("status")
         if status not in ORDER_STATUSES:
-            return jsonify(error=f"status must be one of {ORDER_STATUSES}"), 400
+            return jsonify(error="невідомий статус замовлення"), 400
         fields = {"status": status}
         if status == "on_the_way":
             origin, destination = data.get("origin"), data.get("destination")
             minutes = data.get("road_minutes")
             if not is_point(origin) or not is_point(destination) \
                     or not isinstance(minutes, (int, float)) or minutes <= 0:
-                return jsonify(error="origin, destination and road_minutes are required"), 400
+                return jsonify(error="не вистачає даних маршруту"), 400
             fields.update(origin_lat=origin["lat"], origin_lng=origin["lng"],
                           dest_lat=destination["lat"], dest_lng=destination["lng"],
                           road_minutes=minutes, started_at=clock())
@@ -74,7 +74,7 @@ def create_app(store=None, auth=None, clock=time.time):
     def get_status(order_id):
         status = store.hget(key(order_id), "status")
         if status is None:
-            return jsonify(error="order not found"), 404
+            return jsonify(error="замовлення не знайдено"), 404
         return jsonify(order_id=order_id, status=status)
 
     @app.post("/orders/<order_id>/location")
@@ -82,9 +82,9 @@ def create_app(store=None, auth=None, clock=time.time):
     def set_location(order_id):
         data = request.get_json(silent=True) or {}
         if not is_point(data):
-            return jsonify(error="numeric lat and lng are required"), 400
+            return jsonify(error="потрібні координати точки"), 400
         if store.hget(key(order_id), "status") != "on_the_way":
-            return jsonify(error="order is not on the way"), 409
+            return jsonify(error="замовлення ще не в дорозі"), 409
         store.hset(key(order_id), mapping={"gps_lat": data["lat"], "gps_lng": data["lng"],
                                            "gps_at": clock()})
         return jsonify(order_id=order_id, lat=data["lat"], lng=data["lng"])
@@ -94,7 +94,7 @@ def create_app(store=None, auth=None, clock=time.time):
     def get_location(order_id):
         info = store.hgetall(key(order_id))
         if not info:
-            return jsonify(error="order not found"), 404
+            return jsonify(error="замовлення не знайдено"), 404
         result = {"order_id": order_id, "status": info["status"], "courier": None}
         if "origin_lat" not in info:
             return jsonify(result)

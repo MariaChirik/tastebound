@@ -1,5 +1,6 @@
 import { createApi, ApiError } from "./api.js";
 import { pickerMap, trackingMap } from "./map.js";
+import { reverseGeocode, searchAddress } from "./geocode.js";
 import {
   ALLERGENS,
   DIETS,
@@ -35,6 +36,7 @@ import {
   parseGroupCode,
   itemsByUser,
   scheduleToUnix,
+  normalizePhone,
 } from "./logic.js";
 
 const STORAGE_NAME = "tastebound.v3";
@@ -50,7 +52,7 @@ function defaults() {
     cart: [],
     allergens: [],
     seenAt: 0,
-    delivery: { address: "", lat: null, lng: null },
+    delivery: { address: "", lat: null, lng: null, phone: "" },
     payMethod: "card",
     groupCode: null,
   };
@@ -90,10 +92,20 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+function fill(node, ...children) {
+  node.replaceChildren(...children.flat().filter((c) => c !== null && c !== undefined && c !== false));
+}
+
+let messageTimer = null;
+let messageAt = 0;
+
 function message(text, isError = false) {
   const box = document.getElementById("message");
   box.textContent = text;
   box.className = isError ? "message error" : "message";
+  clearTimeout(messageTimer);
+  messageAt = Date.now();
+  if (text) messageTimer = setTimeout(() => message(""), isError ? 10000 : 5000);
 }
 
 function describe(err) {
@@ -186,6 +198,7 @@ function runCleanup() {
 
 function show(view) {
   if (!VIEWS.includes(view) || !allowed(view)) view = homeView();
+  if (Date.now() - messageAt > 500) message("");
   runCleanup();
   lastOrdersSignature = "";
   lastWorkSignature = "";
@@ -250,61 +263,135 @@ async function renderCatalog() {
     : "Обмежень у профілі немає. Їх можна додати в розділі «Акаунт».";
 
   const grid = document.getElementById("dish-grid");
-  grid.replaceChildren(el("p", {}, "Завантаження…"));
+  fill(grid, el("p", {}, "Завантаження…"));
   try {
     const diet = document.getElementById("diet-select").value;
     const dishes = await api.dishes(buildDishesQuery({ excluded, diet }));
-    grid.replaceChildren(
+    fill(grid, 
       ...(dishes.length
         ? dishes.map((dish) => dishCard(dish))
         : [el("p", {}, "За вашими обмеженнями страв немає.")]),
     );
   } catch (err) {
-    grid.replaceChildren(el("p", { class: "message error" }, describe(err)));
+    fill(grid, el("p", { class: "message error" }, describe(err)));
   }
+}
+
+function localInputValue(seconds) {
+  const date = new Date(seconds * 1000);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
 }
 
 function deliveryForm() {
   const point = state.delivery.lat !== null ? state.delivery : null;
   const mapBox = el("div", { class: "map" });
-  const coords = el(
+  const note = el(
     "p",
     { class: "note" },
-    point ? `Точку на мапі обрано` : "Клацніть на мапі місце доставки.",
+    point ? "Точку на мапі обрано." : "Знайдіть адресу або клацніть на мапі місце доставки.",
   );
+  let picker = null;
+
   const address = el("input", {
     type: "text",
+    class: "grow",
     placeholder: "Вулиця, будинок, квартира",
     value: state.delivery.address,
     oninput: (event) => {
       state.delivery.address = event.target.value;
       persist();
     },
+    onkeydown: (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        findOnMap();
+      }
+    },
   });
-  const when = el("input", { type: "datetime-local", name: "scheduled" });
+
+  async function findOnMap() {
+    const query = address.value.trim();
+    if (query.length < 3) {
+      message("Вкажіть адресу доставки", true);
+      return;
+    }
+    note.textContent = "Шукаємо адресу...";
+    const found = await searchAddress(globalThis.fetch.bind(globalThis), query).catch(() => null);
+    if (!found) {
+      note.textContent = "Адресу не знайдено. Клацніть на мапі місце доставки.";
+      return;
+    }
+    Object.assign(state.delivery, found);
+    persist();
+    picker?.setPoint(found);
+    note.textContent = "Адресу знайдено на мапі. За потреби уточніть точку кліком.";
+  }
+
+  async function pickOnMap(picked) {
+    Object.assign(state.delivery, picked);
+    persist();
+    note.textContent = "Визначаємо адресу...";
+    const text = await reverseGeocode(globalThis.fetch.bind(globalThis), picked.lat, picked.lng)
+      .catch(() => null);
+    if (text) {
+      const flat = address.value.match(/,?\s*кв\.?\s*\d+\s*$/i)?.[0] ?? "";
+      address.value = text + flat;
+      state.delivery.address = address.value;
+      persist();
+      note.textContent = "Точку обрано. Допишіть квартиру, якщо потрібно.";
+    } else {
+      note.textContent = "Точку обрано. Впишіть адресу вручну.";
+    }
+  }
+
+  const phone = el("input", {
+    type: "tel",
+    placeholder: "+380 XX XXX XX XX",
+    value: state.delivery.phone ?? "",
+    oninput: (event) => {
+      state.delivery.phone = event.target.value;
+      persist();
+    },
+  });
+
+  const when = el("input", { type: "datetime-local", class: "grow" });
+  const whenBox = el("div", { class: "row", hidden: true }, when);
+  const later = el("input", {
+    type: "checkbox",
+    onchange: (event) => {
+      whenBox.hidden = !event.target.checked;
+      if (event.target.checked) {
+        const soon = Math.ceil((Date.now() / 1000 + 3600) / 900) * 900;
+        when.min = localInputValue(Date.now() / 1000 + 1800);
+        when.max = localInputValue(Date.now() / 1000 + 7 * 24 * 3600);
+        if (!when.value) when.value = localInputValue(soon);
+      }
+    },
+  });
+
   const box = el(
     "div",
     { class: "panel" },
     el("h3", {}, "Доставка"),
-    el("label", { class: "block" }, "Адреса", address),
-    mapBox,
-    coords,
+    el("p", { class: "note" }, "Адреса"),
     el(
-      "label",
-      { class: "block" },
-      "Доставити на конкретний час (необов'язково)",
-      when,
+      "div",
+      { class: "row" },
+      address,
+      el("button", { type: "button", onclick: findOnMap }, "Знайти на мапі"),
     ),
+    mapBox,
+    note,
+    el("label", { class: "block" }, "Телефон для кур'єра", phone),
+    el("label", { class: "choice" }, later, "Доставити на конкретний час"),
+    whenBox,
   );
   setTimeout(() => {
-    const map = pickerMap(mapBox, point, (picked) => {
-      Object.assign(state.delivery, picked);
-      persist();
-      coords.textContent = "Точку на мапі обрано";
-    });
-    if (map) cleanup.push(() => map.remove());
+    picker = pickerMap(mapBox, point, pickOnMap);
+    if (picker) cleanup.push(() => picker.remove());
     else {
-      mapBox.replaceChildren(el("p", { class: "note" }, "Мапа недоступна, використано центр міста."));
+      fill(mapBox, el("p", { class: "note" }, "Мапа недоступна, використано центр міста."));
       if (state.delivery.lat === null) Object.assign(state.delivery, { lat: 50.4501, lng: 30.5234 });
     }
   });
@@ -316,12 +403,28 @@ function deliveryForm() {
         return null;
       }
       if (state.delivery.lat === null) {
-        message("Позначте місце доставки на мапі", true);
+        message("Позначте місце доставки на мапі або натисніть «Знайти на мапі»", true);
         return null;
       }
-      const delivery = { ...state.delivery, address: state.delivery.address.trim() };
-      const scheduled = scheduleToUnix(when.value);
-      if (scheduled) delivery.scheduled_for = scheduled;
+      const normalized = normalizePhone(state.delivery.phone);
+      if (!normalized) {
+        message("Вкажіть номер телефону у форматі +380XXXXXXXXX", true);
+        return null;
+      }
+      const delivery = {
+        phone: normalized,
+        address: state.delivery.address.trim(),
+        lat: state.delivery.lat,
+        lng: state.delivery.lng,
+      };
+      if (later.checked) {
+        const scheduled = scheduleToUnix(when.value);
+        if (!scheduled || scheduled < Date.now() / 1000) {
+          message("Оберіть час доставки в майбутньому", true);
+          return null;
+        }
+        delivery.scheduled_for = scheduled;
+      }
       return delivery;
     },
   };
@@ -339,7 +442,7 @@ function paymentChoice() {
     options.map((option) =>
       el(
         "label",
-        { class: "block" },
+        { class: "choice" },
         el("input", {
           type: "radio",
           name: "pay-method",
@@ -416,7 +519,7 @@ function renderCart() {
   runCleanup();
   const body = document.getElementById("cart-body");
   if (!state.cart.length) {
-    body.replaceChildren(el("p", {}, "Кошик порожній."));
+    fill(body, el("p", {}, "Кошик порожній."));
     return;
   }
   const isClient = state.role === "client";
@@ -428,11 +531,11 @@ function renderCart() {
     el("p", { class: "price" }, `Разом: ${formatPrice(cartTotal(state.cart))}`),
   );
   if (!isClient) {
-    body.replaceChildren(summary, el("p", { class: "note" }, "Увійдіть як клієнт, щоб оформити замовлення."));
+    fill(body, summary, el("p", { class: "note" }, "Увійдіть як клієнт, щоб оформити замовлення."));
     return;
   }
   const delivery = deliveryForm();
-  body.replaceChildren(
+  fill(body, 
     el("div", { class: "columns" }, el("div", {}, summary, paymentChoice()), delivery.box),
     el(
       "div",
@@ -495,6 +598,44 @@ async function joinGroup(code) {
   renderGroup();
 }
 
+async function returnItemsToCart(code) {
+  const group = await api.getGroup(code).catch(() => null);
+  const mine = (group?.items ?? []).filter((item) => item.user === state.email);
+  if (!mine.length) return;
+  state.cart = mine.map((item) => ({
+    id: item.dish_id,
+    name: item.name,
+    price: item.price,
+    restaurant: item.restaurant,
+    quantity: item.quantity,
+  }));
+  updateNav();
+}
+
+async function cancelGroup(code) {
+  if (!confirmAction("Скасувати спільне замовлення для всіх учасників?")) return;
+  await returnItemsToCart(code);
+  if (await attempt(() => api.cancelGroup(code))) {
+    state.groupCode = null;
+    persist();
+    message("Спільне замовлення скасовано, ваші страви повернуто в кошик");
+    renderGroup();
+  }
+}
+
+async function leaveGroup(code) {
+  await returnItemsToCart(code);
+  await api.setGroupItems(code, []).catch(() => {});
+  state.groupCode = null;
+  persist();
+  message("Ви вийшли зі спільного замовлення");
+  renderGroup();
+}
+
+function confirmAction(text) {
+  return globalThis.confirm ? globalThis.confirm(text) : true;
+}
+
 async function leaveGroupItems(code) {
   if (await attempt(() => api.setGroupItems(code, []))) renderGroup();
 }
@@ -537,7 +678,7 @@ let lastGroupSignature = "";
 async function renderGroup(force = true) {
   const body = document.getElementById("group-body");
   if (!state.groupCode) {
-    body.replaceChildren(groupStartPanel());
+    fill(body, groupStartPanel());
     return;
   }
   const code = state.groupCode;
@@ -547,7 +688,7 @@ async function renderGroup(force = true) {
   } catch (err) {
     state.groupCode = null;
     persist();
-    body.replaceChildren(el("p", { class: "message error" }, describe(err)), groupStartPanel());
+    fill(body, el("p", { class: "message error" }, describe(err)), groupStartPanel());
     return;
   }
   const signature = JSON.stringify([group.items, group.status]);
@@ -558,8 +699,15 @@ async function renderGroup(force = true) {
   const isOwner = group.owner === state.email;
   const byUser = itemsByUser(group.items);
 
+  if (group.status === "cancelled") {
+    state.groupCode = null;
+    persist();
+    fill(body, el("p", { class: "note warn" }, "Це спільне замовлення скасовано."), groupStartPanel());
+    return;
+  }
   if (group.status !== "open") {
-    body.replaceChildren(
+    fill(
+      body,
       el("p", {}, `Замовлення №${group.order_id} вже оформлено. Оплатіть свою частку.`),
       el("button", { type: "button", class: "primary", onclick: () => show("orders") }, "Мої замовлення"),
     );
@@ -608,6 +756,10 @@ async function renderGroup(force = true) {
       byUser[state.email]
         ? el("button", { type: "button", onclick: () => leaveGroupItems(code) }, "Прибрати мої страви")
         : null,
+      isOwner
+        ? el("button", { type: "button", class: "danger", onclick: () => cancelGroup(code) },
+            "Скасувати спільне замовлення")
+        : el("button", { type: "button", onclick: () => leaveGroup(code) }, "Вийти зі спільного замовлення"),
     ),
   ];
 
@@ -629,7 +781,7 @@ async function renderGroup(force = true) {
   } else {
     parts.push(el("p", { class: "note" }, "Замовлення оформить організатор, після цього ви оплатите свою частку."));
   }
-  body.replaceChildren(...parts);
+  fill(body, ...parts);
 }
 
 const liveMaps = new Map();
@@ -640,7 +792,7 @@ function attachTracking(container, order) {
   setTimeout(async () => {
     const map = trackingMap(container, origin, destination);
     if (!map) {
-      container.replaceChildren(el("p", { class: "note" }, "Мапа недоступна без інтернету."));
+      fill(container, el("p", { class: "note" }, "Мапа недоступна без інтернету."));
       return;
     }
     liveMaps.set(order.id, map);
@@ -684,6 +836,9 @@ function orderCard(order, actions, withMap = false) {
     el("h3", {}, `Замовлення №${order.id} - ${order.restaurant}`),
     el("p", { class: "muted" }, orderSummary(order)),
     el("p", {}, `Адреса: ${order.address} (${order.distance_km} км)`),
+    order.phone
+      ? el("p", {}, "Телефон: ", el("a", { href: `tel:${order.phone}` }, order.phone))
+      : null,
     el("p", {}, `Сума: ${formatPrice(order.total)}`),
     el("p", { class: "status" }, `Статус: ${statusLabel(order.status)}`),
     etaText(order) ? el("p", { class: "note" }, etaText(order)) : null,
@@ -775,10 +930,10 @@ async function renderOrders(force = false) {
   lastOrdersSignature = signature;
   runCleanup();
   if (!orders.length) {
-    list.replaceChildren(el("p", {}, "Замовлень ще немає."));
+    fill(list, el("p", {}, "Замовлень ще немає."));
     return;
   }
-  list.replaceChildren(
+  fill(list, 
     ...orders.map((order) => orderCard(order, clientActions(order), order.status === "delivering")),
   );
 }
@@ -988,10 +1143,10 @@ async function renderWork(force = false) {
     el("div", { class: "stack" }, list),
   );
   if (isCourier) {
-    body.replaceChildren(ordersPanel);
+    fill(body, ordersPanel);
     return;
   }
-  body.replaceChildren(el("div", { class: "columns" }, ordersPanel, await restaurantMenuPanel()));
+  fill(body, el("div", { class: "columns" }, ordersPanel, await restaurantMenuPanel()));
 }
 
 async function renderAdmin() {
@@ -1057,7 +1212,7 @@ async function renderAdmin() {
     el("table", {}, el("thead", {}, el("tr", {}, headers.map((h) => el("th", {}, h)))), el("tbody", {}, rows));
 
   const pending = users.filter((user) => user.status === "pending").length;
-  body.replaceChildren(
+  fill(body, 
     el(
       "div",
       { class: "panel" },
@@ -1092,7 +1247,7 @@ async function refreshAlerts() {
 async function renderAlerts() {
   await refreshAlerts();
   const list = document.getElementById("alerts-list");
-  list.replaceChildren(
+  fill(list, 
     ...(latestAlerts.length
       ? latestAlerts.map((item) =>
           el(
@@ -1141,7 +1296,7 @@ async function renderRecs() {
 
   const dishes = deliveredDishes(orders, state.email);
   const rated = Object.entries(ratings);
-  body.replaceChildren(
+  fill(body, 
     el(
       "div",
       { class: "panel" },
@@ -1324,7 +1479,7 @@ function registerForm(restaurants) {
 async function renderAccount() {
   const body = document.getElementById("account-body");
   if (state.email) {
-    body.replaceChildren(
+    fill(body, 
       el(
         "p",
         {},
@@ -1337,7 +1492,7 @@ async function renderAccount() {
     return;
   }
   const restaurants = (await api.restaurants().catch(() => [])) ?? [];
-  body.replaceChildren(
+  fill(body, 
     state.groupCode
       ? el("p", { class: "note warn" }, "Увійдіть як клієнт, щоб приєднатися до спільного замовлення.")
       : null,
@@ -1355,7 +1510,10 @@ function poll() {
 
 function init() {
   for (const button of document.querySelectorAll("nav button")) {
-    button.addEventListener("click", () => show(button.dataset.view));
+    button.addEventListener("click", () => {
+      message("");
+      show(button.dataset.view);
+    });
   }
   document.getElementById("diet-select").addEventListener("change", renderCatalog);
   setInterval(poll, POLL_MS);
