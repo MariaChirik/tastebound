@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tastebound-config
+  namespace: tastebound
+  labels:
+    app: tastebound-config
+data:
+  POSTGRES_USER: postgres
+  POSTGRES_DB: tastebound
+  REDIS_URL: redis://redis:6379/0
+  CATALOG_URL: http://catalog:5000
+  PAYMENT_URL: http://payment:5000
+  TRACKING_URL: http://tracking:5000
+  ADMIN_EMAIL: admin@tastebound.local
+  LIQPAY_RESULT_URL: http://tastebound.localhost:8081/#orders
+  SMTP_HOST: mailpit
+  SMTP_PORT: '1025'
+  SMTP_FROM: noreply@tastebound.local

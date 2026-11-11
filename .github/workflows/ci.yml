@@ -116,3 +116,101 @@ jobs:
 
       - name: Validate docker-compose.yml
         run: docker compose -f deploy/docker-compose.yml config --quiet
+
+  compose-smoke:
+    name: compose smoke test
+    needs: [compose-config, docker-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from GitHub Secrets
+        env:
+          AUTH_SECRET_KEY: ${{ secrets.AUTH_SECRET_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          test -n "$AUTH_SECRET_KEY" && test -n "$POSTGRES_PASSWORD" && test -n "$ADMIN_PASSWORD"
+          {
+            echo "AUTH_SECRET_KEY=$AUTH_SECRET_KEY"
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "ADMIN_EMAIL=admin@tastebound.local"
+            echo "ADMIN_PASSWORD=$ADMIN_PASSWORD"
+          } > .env
+
+      - name: Start the application
+        run: docker compose -f deploy/docker-compose.yml --env-file .env up -d --build --wait
+
+      - name: Check services through the gateway
+        run: |
+          for s in auth catalog orders payments tracking notifications recommendations; do
+            curl -fsS "http://localhost:8080/api/$s/health"; echo
+          done
+          curl -fsS http://localhost:8080/ > /dev/null
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml --env-file .env logs --tail=50
+
+      - name: Stop the application
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml --env-file .env down -v
+
+  terraform:
+    name: terraform validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  k8s-manifests:
+    name: kubernetes manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests
+        run: |
+          docker run --rm -v "$PWD/deploy/k8s:/k8s" ghcr.io/yannh/kubeconform:latest \
+            -strict -summary -ignore-filename-pattern 'kustomization.yaml' /k8s
+
+  publish:
+    name: publish image (${{ matrix.name }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [compose-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: auth, context: services/auth }
+          - { name: catalog, context: services/catalog }
+          - { name: order, context: services/order }
+          - { name: payment, context: services/payment }
+          - { name: tracking, context: services/tracking }
+          - { name: notification, context: services/notification }
+          - { name: recommendation, context: services/recommendation }
+          - { name: frontend, context: frontend }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tastebound-${{ matrix.name }}"
+          docker build -t "$image:latest" -t "$image:${GITHUB_SHA::7}" ${{ matrix.context }}
+          docker push --all-tags "$image"

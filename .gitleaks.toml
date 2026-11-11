@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+regexes = [
+  '''^var\.[a-z_]+$''',
+  '''^aws_key_pair\.[a-z_.]+$''',
+  '''^LIQPAY_(PUBLIC|PRIVATE)_KEY$''',
+]
