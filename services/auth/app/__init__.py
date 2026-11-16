@@ -7,6 +7,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.db import connect
+from app.metrics import init_metrics
 
 PUBLIC_ROLES = ("client", "restaurant_staff", "courier")
 ALL_ROLES = PUBLIC_ROLES + ("admin",)
@@ -42,6 +43,7 @@ def validate_registration(email, password, role, restaurant=""):
 
 def create_app(db=None, secret=None, admin_email=None, admin_password=None):
     app = Flask(__name__)
+    init_metrics(app, "auth")
     app.json.ensure_ascii = False
     secret = secret or os.environ.get("AUTH_SECRET_KEY") or "local-development-only"
     signer = URLSafeTimedSerializer(secret)

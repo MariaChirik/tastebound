@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag must point to a commit from main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+  publish:
+    name: publish release image (${{ matrix.name }})
+    needs: [verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: auth, context: services/auth }
+          - { name: catalog, context: services/catalog }
+          - { name: order, context: services/order }
+          - { name: payment, context: services/payment }
+          - { name: tracking, context: services/tracking }
+          - { name: notification, context: services/notification }
+          - { name: recommendation, context: services/recommendation }
+          - { name: frontend, context: frontend }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tastebound-${{ matrix.name }}"
+          docker build -t "$image:$GITHUB_REF_NAME" ${{ matrix.context }}
+          docker push "$image:$GITHUB_REF_NAME"
+
+  deploy:
+    name: deploy to Kubernetes
+    needs: [publish]
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TAG: ${{ github.ref_name }}
+      NAMESPACE: tastebound
+      KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connect to the cluster
+        id: cluster
+        run: |
+          if [ -z "$KUBE_CONFIG" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Secret KUBE_CONFIG is not set, deployment to the cluster is skipped"
+            exit 0
+          fi
+          mkdir -p ~/.kube
+          echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl cluster-info
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Apply manifests with the release images
+        if: steps.cluster.outputs.configured == 'true'
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          cp -r deploy/k8s /tmp/k8s
+          {
+            echo "images:"
+            for svc in auth catalog order payment tracking notification recommendation frontend; do
+              echo "- name: ghcr.io/$owner/tastebound-$svc"
+              echo "  newTag: $TAG"
+            done
+          } >> /tmp/k8s/kustomization.yaml
+          kubectl apply -k /tmp/k8s
+          for d in auth catalog order payment tracking notification notification-worker \
+                   recommendation frontend; do
+            kubectl -n "$NAMESPACE" annotate "deployment/$d" \
+              kubernetes.io/change-cause="Release $TAG" --overwrite
+          done
+
+      - name: Wait for the rolling update
+        if: steps.cluster.outputs.configured == 'true'
+        run: |
+          for d in auth catalog order payment tracking notification notification-worker \
+                   recommendation frontend; do
+            kubectl -n "$NAMESPACE" rollout status "deployment/$d" --timeout=180s
+          done
+
+      - name: Roll back on failure
+        if: failure() && steps.cluster.outputs.configured == 'true'
+        run: |
+          for d in auth catalog order payment tracking notification notification-worker \
+                   recommendation frontend; do
+            kubectl -n "$NAMESPACE" rollout undo "deployment/$d" || true
+          done

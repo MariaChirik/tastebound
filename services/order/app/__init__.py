@@ -35,6 +35,7 @@ from app.logic import (
     validate_schedule,
     visible_statuses,
 )
+from app.metrics import init_metrics
 from app.security import TokenAuth, bearer_header
 
 MAX_DISTANCE_KM = 30
@@ -121,6 +122,7 @@ def from_env(factory, name, fallback=None):
 def create_app(db=None, events=None, tracking=None, catalog=None, payments=None,
                auth=None, clock=time.time):
     app = Flask(__name__)
+    init_metrics(app, "order")
     app.json.ensure_ascii = False
     auth = auth or TokenAuth()
     db = db if db is not None else connect(os.environ.get("DATABASE_URL"))

@@ -24,3 +24,13 @@ kubectl -n tastebound get pods
 ```
 
 Застосунок: http://localhost:8081, тестова пошта: http://mail.tastebound.localhost:8081.
+
+## Моніторинг
+
+Prometheus і Grafana запускаються разом із застосунком:
+
+```
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.monitoring.yml --env-file .env up -d
+```
+
+Prometheus: http://localhost:9090, Grafana: http://localhost:3000 (admin і пароль GRAFANA_ADMIN_PASSWORD з `.env`).
