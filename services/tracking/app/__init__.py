@@ -4,6 +4,7 @@ import time
 import redis
 from flask import Flask, jsonify, request
 
+from app.metrics import init_metrics
 from app.security import TokenAuth
 
 SERVICE = "tracking"
@@ -35,6 +36,7 @@ def create_app(store=None, auth=None, clock=time.time):
     store = store if store is not None else default_store()
     auth = auth or TokenAuth()
     app = Flask(__name__)
+    init_metrics(app, "tracking")
 
     @app.errorhandler(redis.RedisError)
     def storage_down(err):

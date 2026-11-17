@@ -6,6 +6,7 @@ from flask import Flask, g, jsonify, request
 from app.data import RESTAURANTS, SAMPLE_DISHES
 from app.db import connect
 from app.filters import filter_dishes, parse_list, validate_dish
+from app.metrics import init_metrics
 from app.security import TokenAuth
 
 ID_COLUMN = {
@@ -43,6 +44,7 @@ def schema(dialect):
 
 def create_app(db=None, auth=None):
     app = Flask(__name__)
+    init_metrics(app, "catalog")
     app.json.ensure_ascii = False
     auth = auth or TokenAuth()
     db = db if db is not None else connect(os.environ.get("DATABASE_URL"))

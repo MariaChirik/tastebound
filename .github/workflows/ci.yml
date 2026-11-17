@@ -134,11 +134,17 @@ jobs:
     env:
       AUTH_SECRET_KEY: ci-only-not-a-secret
       POSTGRES_PASSWORD: ci-only-not-a-secret
+      GRAFANA_ADMIN_PASSWORD: ci-only-not-a-secret
     steps:
       - uses: actions/checkout@v4
 
       - name: Validate docker-compose.yml
         run: docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Validate monitoring stack
+        run: >-
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.monitoring.yml
+          config --quiet
 
   api-tests:
     name: api tests (newman)

@@ -7,6 +7,7 @@ import urllib.request
 import redis
 from flask import Flask, g, jsonify, request
 
+from app.metrics import init_metrics
 from app.ranking import TOP_N, rank
 from app.security import TokenAuth
 
@@ -41,6 +42,7 @@ def create_app(store=None, catalog=None, auth=None):
         os.environ.get("CATALOG_URL", "http://localhost:5000")
     )
     app = Flask(__name__)
+    init_metrics(app, "recommendation")
     app.json.ensure_ascii = False
 
     @app.errorhandler(redis.RedisError)

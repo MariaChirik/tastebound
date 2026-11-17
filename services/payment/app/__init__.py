@@ -6,6 +6,7 @@ import redis
 from flask import Flask, g, jsonify, request
 
 from app import liqpay as lp
+from app.metrics import init_metrics
 from app.security import TokenAuth
 
 SERVICE = "payment"
@@ -43,6 +44,7 @@ def create_app(store=None, gateway="env", auth=None):
     gateway = default_gateway() if gateway == "env" else gateway
     auth = auth or TokenAuth()
     app = Flask(__name__)
+    init_metrics(app, "payment")
     app.json.ensure_ascii = False
 
     @app.errorhandler(redis.RedisError)

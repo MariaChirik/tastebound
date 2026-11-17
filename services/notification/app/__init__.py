@@ -7,6 +7,7 @@ import redis
 from flask import Flask, g, jsonify, request
 
 from app.mailer import LogMailer
+from app.metrics import init_metrics
 from app.security import TokenAuth
 
 SERVICE = "notification"
@@ -45,6 +46,7 @@ def create_app(store=None, clock=time.time, auth=None, mailer=None):
     store = store if store is not None else default_store()
     auth = auth or TokenAuth()
     app = Flask(__name__)
+    init_metrics(app, "notification")
     app.json.ensure_ascii = False
 
     @app.errorhandler(redis.RedisError)
